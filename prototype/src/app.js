@@ -20,6 +20,7 @@
 
   const state = {
     cats: new Set(CAT_ORDER),
+    sel: null,
     stores: true,
     fallback: true,
     density: true,
@@ -54,28 +55,67 @@
   const SGG = prepRings(DATA.sgg);
   const DONG = prepRings(DATA.dong);
 
-  // ── 라벨 목록 ───────────────────────────────────────────
-  const labels = [];
-  for (const k of DATA.keywords) {
-    const size = k.tr === 1 ? 10.5 + 15 * k.s : k.tr === 2 ? 10.5 + 12 * k.s : 10 + 8 * k.s;
-    labels.push({
-      text: k.t, cat: k.c, tier: k.tr, score: k.s, kind: "kw", poi: k.k,
-      approx: k.a === 1, appear: TIER_IN[k.tr - 1],
-      where: k.d, x: wx(k.lon), y: wy(k.lat), size, weight: 500,
-    });
+  // ── 카테고리 집계 ───────────────────────────────────────
+  // 과밀은 라벨을 더 잘 배치해서 푸는 게 아니라, '한 구역 한 카테고리에 라벨 하나'로 푼다.
+  // 지도에는 대표 키워드만 놓고 나머지는 클릭했을 때 목록으로 펼친다.
+  // 집계 단위는 줌에 따라 갈린다 — L1·L2는 구·군, L3는 행정동.
+  const ITEMS = DATA.keywords
+    .map((k) => {
+      const [sgg] = k.d.split(" ");
+      return {
+        text: k.t, cat: k.c, score: k.s, poi: k.k, approx: k.a === 1,
+        sgg, where: k.d, x: wx(k.lon), y: wy(k.lat), lon: k.lon, lat: k.lat,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  function buildGroups(keyOf) {
+    const map = new Map();
+    for (const it of ITEMS) {
+      const key = keyOf(it) + "\u0000" + it.cat;
+      let g = map.get(key);
+      if (!g) { g = { unit: keyOf(it), cat: it.cat, members: [] }; map.set(key, g); }
+      g.members.push(it); // ITEMS가 점수 내림차순이라 members[0]이 대표
+    }
+    return [...map.values()];
   }
-  for (const p of DATA.places) {
-    // 구·군 이름은 전체 보기부터, 행정동 이름은 L2 후반부터 빈 곳을 채운다
-    const isSgg = p.k === "sgg";
-    labels.push({
-      text: p.n, cat: "place", tier: isSgg ? 1 : 3, score: isSgg ? 0.3 : 0.1,
-      kind: "place", appear: isSgg ? TIER_IN[0] : 1.5,
-      where: p.d, x: wx(p.lon), y: wy(p.lat),
-      size: isSgg ? 13 : 11, weight: 400,
-    });
+  const GROUPS = {
+    sgg: buildGroups((it) => it.sgg),
+    dong: buildGroups((it) => it.where),
+  };
+
+  function activeGroups() {
+    const useDong = tierOf() >= 3;
+    const out = [];
+    for (const g of (useDong ? GROUPS.dong : GROUPS.sgg)) {
+      if (!state.cats.has(g.cat)) continue;
+      const members = state.stores ? g.members : g.members.filter((m) => m.poi !== "store");
+      if (!members.length) continue;
+      const rep = members[0];
+      out.push({
+        kind: "kw", group: g, members, rep,
+        text: rep.text, cat: g.cat, score: rep.score, where: g.unit, approx: rep.approx,
+        x: rep.x, y: rep.y, weight: 500,
+        // 묶인 개수가 많을수록 조금 크게 — 그 구역에서 그 카테고리가 두껍다는 신호
+        size: 10.5 + 14 * rep.score + Math.min(4.5, (members.length - 1) * 0.7),
+        appear: useDong ? TIER_IN[2] : TIER_IN[0],
+        vanish: useDong ? null : TIER_IN[2],
+      });
+    }
+    return out.sort((a, b) => b.score - a.score);
   }
-  const KEYWORDS = labels.filter((l) => l.kind === "kw").sort((a, b) => b.score - a.score);
-  const PLACES = labels.filter((l) => l.kind === "place").sort((a, b) => b.score - a.score);
+
+  // 폴백 지명 라벨 — 실제 위치의 실제 이름이라 집계 대상이 아니다
+  const PLACES = DATA.places
+    .map((p) => {
+      const isSgg = p.k === "sgg";
+      return {
+        kind: "place", text: p.n, cat: "place", score: isSgg ? 0.3 : 0.1,
+        appear: isSgg ? TIER_IN[0] : 1.5, vanish: null,
+        where: p.d, x: wx(p.lon), y: wy(p.lat), size: isSgg ? 13 : 11, weight: 400,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 
   // ── 색상 (테마 토큰에서 읽어와 테마 전환에 따라간다) ────
   let COLOR = {};
@@ -114,11 +154,12 @@
   }
 
   function zoomAt(factor, px, py) {
-    const before = { x: (px - state.W / 2) / state.scale + state.cx, y: (py - state.H / 2) / state.scale + state.cy };
+    const before = tierOf();
+    const anchor = { x: (px - state.W / 2) / state.scale + state.cx, y: (py - state.H / 2) / state.scale + state.cy };
     state.scale = Math.min(Math.max(state.scale * factor, state.fit * 0.85), state.fit * 26);
-    state.cx = before.x - (px - state.W / 2) / state.scale;
-    state.cy = before.y - (py - state.H / 2) / state.scale;
-    draw();
+    state.cx = anchor.x - (px - state.W / 2) / state.scale;
+    state.cy = anchor.y - (py - state.H / 2) / state.scale;
+    if (tierOf() !== before && state.sel) select(null); else draw();
   }
 
   // ── 라벨 배치 ───────────────────────────────────────────
@@ -148,7 +189,8 @@
                    [0, -2], [0, 2], [-1.7, 0], [1.7, 0]];
 
     const tryPlace = (l, minGap) => {
-      const alpha = Math.min(1, (z - l.appear) / FADE);
+      let alpha = Math.min(1, (z - l.appear) / FADE);
+      if (l.vanish != null) alpha = Math.min(alpha, Math.max(0, 1 - (z - l.vanish) / FADE));
       if (alpha <= 0.04) return false;
       const ax = sx(l.x), ay = sy(l.y);
       if (ax < -margin || ay < -margin || ax > state.W + margin || ay > state.H + margin) return false;
@@ -174,17 +216,15 @@
       return false;
     };
 
-    for (const l of KEYWORDS) {
-      if (!state.cats.has(l.cat)) continue;
-      if (l.poi === "store" && !state.stores) continue;
-      tryPlace(l, 0);
-    }
-    const kwCount = placed.length;
+    for (const l of activeGroups()) tryPlace(l, 0);
+    const reps = placed.slice();
     if (state.fallback) for (const l of PLACES) tryPlace(l, state.density ? DENSITY_RADIUS : 0);
 
-    document.getElementById("r-kw").textContent = kwCount;
-    document.getElementById("r-pl").textContent = placed.length - kwCount;
+    document.getElementById("r-kw").textContent = reps.length;
+    document.getElementById("r-mem").textContent = reps.reduce((n, p) => n + p.l.members.length, 0);
+    document.getElementById("r-pl").textContent = placed.length - reps.length;
     document.getElementById("r-drop").textContent = dropped;
+    document.getElementById("r-unit").textContent = tierOf() >= 3 ? "행정동" : "구·군";
     document.getElementById("r-zoom").textContent = (state.scale / state.fit).toFixed(1) + "×";
     const t = tierOf();
     for (const el of document.querySelectorAll(".tier")) {
@@ -243,6 +283,31 @@
       ctx.restore();
     }
 
+    // 선택한 그룹의 구성원 — 라벨 하나에 묶인 실제 장소들을 점으로 편다
+    if (state.sel) {
+      const rx = sx(state.sel.rep.x), ry = sy(state.sel.rep.y);
+      ctx.save();
+      for (const m of state.sel.members) {
+        const mx = sx(m.x), my = sy(m.y);
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = COLOR[state.sel.cat];
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(mx, my);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = COLOR[state.sel.cat];
+        ctx.beginPath();
+        ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = COLOR.paper;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // 밀어낸 라벨의 지시선 — 글자와 실제 위치를 잇는다
     ctx.save();
     ctx.strokeStyle = COLOR.edge;
@@ -271,6 +336,15 @@
       ctx.strokeText(l.text, p.px, p.py); // 배경과의 대비를 위한 얇은 외곽
       ctx.globalAlpha = p.alpha * (l.kind === "place" ? 0.72 : 1);
       ctx.fillText(l.text, p.px, p.py);
+      if (state.sel && l.group === state.sel) {
+        const half = (p.box[2] - p.box[0]) / 2 - 4;
+        ctx.beginPath();
+        ctx.moveTo(p.px - half, p.py + l.size * 0.62);
+        ctx.lineTo(p.px + half, p.py + l.size * 0.62);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = COLOR[l.cat];
+        ctx.stroke();
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -278,13 +352,14 @@
   // ── 상호작용 ────────────────────────────────────────────
   let drag = null;
   canvas.addEventListener("pointerdown", (e) => {
-    drag = { x: e.clientX, y: e.clientY, cx: state.cx, cy: state.cy };
+    drag = { x: e.clientX, y: e.clientY, cx: state.cx, cy: state.cy, moved: false };
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add("dragging");
     tip.hidden = true;
   });
   canvas.addEventListener("pointermove", (e) => {
     if (drag) {
+      if (Math.abs(e.clientX - drag.x) > 3 || Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
       state.cx = drag.cx - (e.clientX - drag.x) / state.scale;
       state.cy = drag.cy - (e.clientY - drag.y) / state.scale;
       draw();
@@ -304,6 +379,13 @@
     }
   });
   const endDrag = (e) => {
+    if (drag && !drag.moved) {
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const hit = placed.find((p) => p.l.kind === "kw" &&
+        mx >= p.box[0] && mx <= p.box[2] && my >= p.box[1] && my <= p.box[3]);
+      select(hit ? hit.l : null);
+    }
     drag = null;
     canvas.classList.remove("dragging");
     if (e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
@@ -332,6 +414,35 @@
       zoomAt(1 / 1.35, state.W / 2, state.H / 2); e.preventDefault();
     }
   });
+
+  // ── 상세 목록 ───────────────────────────────────────────
+  const panel = document.getElementById("panel");
+  function select(label) {
+    state.sel = label;
+    if (!label) { panel.hidden = true; draw(); return; }
+    const rows = label.members.map((m) => `
+      <li>
+        <span class="nm">${m.text}</span>
+        <span class="badge">${m.poi === "store" ? "가게" : "명소"}</span>
+        <span class="dong">${m.where.split(" ")[1]}${m.approx ? " · 근사" : ""}</span>
+        <span class="bar" style="--v:${Math.round(m.score * 100)}%"></span>
+      </li>`).join("");
+    panel.innerHTML = `
+      <div class="phead">
+        <div>
+          <span class="pcat" style="--c:var(${CAT_VAR[label.cat]})">${DATA.categories[label.cat]}</span>
+          <h3>${label.where}</h3>
+        </div>
+        <button type="button" class="pclose" id="pclose" aria-label="닫기">×</button>
+      </div>
+      <p class="pmeta">${label.members.length}곳 · 대표 <b>${label.text}</b></p>
+      <ul class="plist">${rows}</ul>
+      <p class="pnote">샘플 데이터입니다. 실제 목록은 수집 시점의 언급 근거와 함께 표시됩니다.</p>`;
+    panel.hidden = false;
+    document.getElementById("pclose").onclick = () => select(null);
+    draw();
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") select(null); });
 
   document.getElementById("zoom-in").onclick = () => zoomAt(1.5, state.W / 2, state.H / 2);
   document.getElementById("zoom-out").onclick = () => zoomAt(1 / 1.5, state.W / 2, state.H / 2);
@@ -392,6 +503,12 @@
         }
       }
       draw();
+    },
+    // 대표 키워드 이름으로 상세 목록을 연다 (데모·스크린샷용)
+    open(text) {
+      const hit = placed.find((p) => p.l.kind === "kw" && p.l.text === text);
+      if (hit) select(hit.l);
+      return Boolean(hit);
     },
     stats: () => ({ tier: tierOf(), zoom: state.scale / state.fit, placed: placed.length }),
   };

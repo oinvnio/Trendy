@@ -18,7 +18,7 @@
         <label class="switch">
           <input type="checkbox" id="sw-stores" checked>
           <span class="lbl">가게 이름 포함
-            <span class="hint">상권·명소뿐 아니라 실제 상호까지 배치 (예시 데이터, 영업 여부 미검증)</span>
+            <span class="hint">목록과 대표 키워드 선정에 실제 상호를 포함 (예시 데이터, 영업 여부 미검증)</span>
           </span>
         </label>
       </section>
@@ -56,7 +56,9 @@
       <section>
         <h2>판독</h2>
         <dl class="readout">
-          <dt>배치된 키워드</dt><dd id="r-kw">0</dd>
+          <dt>집계 단위</dt><dd id="r-unit">구·군</dd>
+          <dt>대표 키워드</dt><dd id="r-kw">0</dd>
+          <dt>묶인 장소</dt><dd id="r-mem">0</dd>
           <dt>배치된 지명</dt><dd id="r-pl">0</dd>
           <dt>겹쳐서 탈락</dt><dd id="r-drop">0</dd>
           <dt>배율</dt><dd id="r-zoom">1.0×</dd>
@@ -69,7 +71,8 @@
     <div class="stage">
       <canvas id="map" tabindex="0" aria-label="부산 키워드 지도. 드래그로 이동, 휠로 확대·축소."></canvas>
       <div class="tip" id="tip" hidden></div>
-      <p class="hint-bar">드래그로 이동 · 휠로 확대·축소 · 라벨에 커서를 올리면 위치가 표시됩니다</p>
+      <aside class="panel" id="panel" hidden></aside>
+      <p class="hint-bar">드래그로 이동 · 휠로 확대·축소 · <b>키워드를 클릭하면 묶인 장소 목록</b>이 열립니다</p>
     </div>
   </div>
 </div>
