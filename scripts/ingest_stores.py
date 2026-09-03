@@ -65,7 +65,15 @@ CAFE_SMALL = {"카페", "빵/도넛", "떡/한과", "토스트/샌드위치/샐�
 STAY_SMALL = {"호텔/리조트", "펜션", "게스트하우스", "민박"}
 
 
+# TourAPI 분류코드 cat1 → 카테고리. A01 자연 / A02 인문(문화·역사) / A03 레포츠
+TOUR_CAT = {"A01": "view", "A02": "culture", "A03": "view", "A04": "life", "A05": "food"}
+
+
 def categorize(big, mid, small):
+    if big == "관광":                       # TourAPI에서 온 행
+        if small in ("문화시설", "축제공연행사"):
+            return "culture"
+        return TOUR_CAT.get((mid or "")[:3], "view")
     if mid == "비알코올" or small in CAFE_SMALL:
         return "cafe"
     if big == "음식":
