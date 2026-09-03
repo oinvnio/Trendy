@@ -1,0 +1,65 @@
+<div class="wrap">
+  <header class="top">
+    <h1>부산 트렌드 워드맵</h1>
+    <p class="sub">줌인할수록 선명해지는 동네 키워드 — 렌더링 프로토타입</p>
+    <span class="spacer"></span>
+    <span class="notice">키워드는 렌더링 검증용 샘플입니다. 실제 트렌드 데이터가 아닙니다.</span>
+  </header>
+
+  <div class="main">
+    <aside class="rail">
+      <section>
+        <h2>카테고리</h2>
+        <div class="cats" id="cats"></div>
+      </section>
+
+      <section>
+        <h2>폴백 라벨</h2>
+        <label class="switch">
+          <input type="checkbox" id="sw-fallback" checked>
+          <span class="lbl">지명으로 빈 곳 채우기
+            <span class="hint">트렌드가 없는 구역에 행정동·구군 이름을 낮은 채도로 배치</span>
+          </span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="sw-density" checked>
+          <span class="lbl">밀도 균등화
+            <span class="hint">끄면 원도심만 과밀해지고 기장군·강서구는 그대로 빕니다</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>줌</h2>
+        <div class="zoombar">
+          <button type="button" id="zoom-out" aria-label="축소">−</button>
+          <button type="button" id="zoom-in" aria-label="확대">+</button>
+          <button type="button" id="zoom-reset">전체</button>
+        </div>
+        <div class="tiers" id="tiers">
+          <div class="tier" data-tier="1"><span class="k">L1</span><span>부산 전체 · 대표 키워드</span></div>
+          <div class="tier" data-tier="2"><span class="k">L2</span><span>구·군 단위</span></div>
+          <div class="tier" data-tier="3"><span class="k">L3</span><span>행정동 단위</span></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>판독</h2>
+        <dl class="readout">
+          <dt>배치된 키워드</dt><dd id="r-kw">0</dd>
+          <dt>배치된 지명</dt><dd id="r-pl">0</dd>
+          <dt>겹쳐서 탈락</dt><dd id="r-drop">0</dd>
+          <dt>배율</dt><dd id="r-zoom">1.0×</dd>
+        </dl>
+      </section>
+
+      <p class="source">경계: 통계청 SGIS 행정동 경계(공공누리 제1유형) / <a href="https://github.com/vuski/admdongkor">vuski·admdongkor</a> (CC BY 4.0), 2026-07-01 기준</p>
+    </aside>
+
+    <div class="stage">
+      <canvas id="map" tabindex="0" aria-label="부산 키워드 지도. 드래그로 이동, 휠로 확대·축소."></canvas>
+      <div class="tip" id="tip" hidden></div>
+      <p class="hint-bar">드래그로 이동 · 휠로 확대·축소 · 라벨에 커서를 올리면 위치가 표시됩니다</p>
+    </div>
+  </div>
+</div>
