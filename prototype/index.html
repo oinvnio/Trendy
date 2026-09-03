@@ -679,6 +679,7 @@ canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     const b = document.createElement("button");
     b.type = "button";
     b.className = "cat";
+    b.dataset.cat = key;
     b.setAttribute("aria-pressed", "true");
     b.style.setProperty("--c", `var(${CAT_VAR[key]})`);
     b.innerHTML = `<span class="dot"></span><span>${DATA.categories[key]}</span><span class="n">${n}</span>`;
@@ -693,6 +694,35 @@ canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
   window.addEventListener("resize", resize);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); });
+
+  // 스크린샷·데모용 조작 API. UI로 할 수 있는 일과 동일한 상태를 코드로 지정한다.
+  //   trendyMap.setView(3, 129.06, 35.16)  배율 3배로 해당 좌표를 중심에 둔다
+  //   trendyMap.setOptions({ fallback: false, cats: ["food"] })
+  window.trendyMap = {
+    setView(mult, lon, lat) {
+      state.scale = state.fit * mult;
+      if (lon !== undefined && lat !== undefined) { state.cx = wx(lon); state.cy = wy(lat); }
+      draw();
+    },
+    setOptions(o = {}) {
+      if (o.fallback !== undefined) {
+        state.fallback = o.fallback;
+        document.getElementById("sw-fallback").checked = o.fallback;
+      }
+      if (o.density !== undefined) {
+        state.density = o.density;
+        document.getElementById("sw-density").checked = o.density;
+      }
+      if (o.cats) {
+        state.cats = new Set(o.cats);
+        for (const b of document.querySelectorAll(".cat")) {
+          b.setAttribute("aria-pressed", state.cats.has(b.dataset.cat) ? "true" : "false");
+        }
+      }
+      draw();
+    },
+    stats: () => ({ tier: tierOf(), zoom: state.scale / state.fit, placed: placed.length }),
+  };
 
   readColors();
   resize();
