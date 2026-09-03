@@ -20,6 +20,7 @@
 
   const state = {
     cats: new Set(CAT_ORDER),
+    stores: true,
     fallback: true,
     density: true,
     scale: 1, fit: 1, cx: 0, cy: 0,
@@ -58,7 +59,8 @@
   for (const k of DATA.keywords) {
     const size = k.tr === 1 ? 10.5 + 15 * k.s : k.tr === 2 ? 10.5 + 12 * k.s : 10 + 8 * k.s;
     labels.push({
-      text: k.t, cat: k.c, tier: k.tr, score: k.s, kind: "kw", appear: TIER_IN[k.tr - 1],
+      text: k.t, cat: k.c, tier: k.tr, score: k.s, kind: "kw", poi: k.k,
+      approx: k.a === 1, appear: TIER_IN[k.tr - 1],
       where: k.d, x: wx(k.lon), y: wy(k.lat), size, weight: 500,
     });
   }
@@ -172,7 +174,11 @@
       return false;
     };
 
-    for (const l of KEYWORDS) if (state.cats.has(l.cat)) tryPlace(l, 0);
+    for (const l of KEYWORDS) {
+      if (!state.cats.has(l.cat)) continue;
+      if (l.poi === "store" && !state.stores) continue;
+      tryPlace(l, 0);
+    }
     const kwCount = placed.length;
     if (state.fallback) for (const l of PLACES) tryPlace(l, state.density ? DENSITY_RADIUS : 0);
 
@@ -288,7 +294,8 @@
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     const hit = placed.find((p) => mx >= p.box[0] && mx <= p.box[2] && my >= p.box[1] && my <= p.box[3]);
     if (hit) {
-      tip.innerHTML = `<b>${hit.l.text}</b> <span>${hit.l.where}</span>`;
+      const note = hit.l.approx ? " · 동 내 근사 위치" : "";
+      tip.innerHTML = `<b>${hit.l.text}</b> <span>${hit.l.where}${note}</span>`;
       tip.style.left = Math.min(mx + 12, state.W - 220) + "px";
       tip.style.top = Math.max(my - 34, 4) + "px";
       tip.hidden = false;
@@ -329,6 +336,7 @@
   document.getElementById("zoom-in").onclick = () => zoomAt(1.5, state.W / 2, state.H / 2);
   document.getElementById("zoom-out").onclick = () => zoomAt(1 / 1.5, state.W / 2, state.H / 2);
   document.getElementById("zoom-reset").onclick = resetView;
+  document.getElementById("sw-stores").onchange = (e) => { state.stores = e.target.checked; draw(); };
   document.getElementById("sw-fallback").onchange = (e) => { state.fallback = e.target.checked; draw(); };
   document.getElementById("sw-density").onchange = (e) => { state.density = e.target.checked; draw(); };
 
@@ -365,6 +373,10 @@
       draw();
     },
     setOptions(o = {}) {
+      if (o.stores !== undefined) {
+        state.stores = o.stores;
+        document.getElementById("sw-stores").checked = o.stores;
+      }
       if (o.fallback !== undefined) {
         state.fallback = o.fallback;
         document.getElementById("sw-fallback").checked = o.fallback;

@@ -12,7 +12,10 @@ prototype/src/{style.css,app.js} 와 함께 인라인한다. 외부 요청이 �
 사용법: python3 scripts/build_prototype.py
 """
 import json
+import random
 from pathlib import Path
+
+from shapely.geometry import shape
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "busan"
@@ -20,6 +23,7 @@ SRC = ROOT / "prototype" / "src"
 OUT = ROOT / "prototype"
 
 R = 5  # 좌표 반올림 자리수 (약 1m)
+SPREAD_R = 0.013  # 같은 동 키워드를 흩뿌릴 최대 반경(도). 위도 기준 약 1.4km
 
 
 def rings(geometry):
@@ -32,6 +36,45 @@ def rings(geometry):
     return out
 
 
+def spread_within(poly, anchor, n, seed):
+    """행정동 폴리곤 안에 n개 지점을 서로 떨어뜨려 고른다.
+
+    같은 동에 묶인 키워드가 전부 대표점 한 곳에 쌓이면 줌인해도 라벨이
+    겹쳐 사라진다. 가게별 실제 좌표(카카오 로컬·TourAPI)를 확보하기 전까지
+    쓰는 임시 분산이며, 이렇게 나온 좌표는 approx로 표시한다.
+    """
+    if n <= 1:
+        return [anchor]
+    rng = random.Random(seed)
+    # 분산 반경 상한 — 기장읍처럼 100km²가 넘는 폴리곤에서 폴리곤 전체에
+    # 흩뿌리면 라벨이 실제 위치에서 수 km 떨어진다. 대표점 주변으로 제한한다.
+    area = poly.intersection(shape({"type": "Point", "coordinates": anchor}).buffer(SPREAD_R))
+    if area.area > 0:
+        poly = area
+    minx, miny, maxx, maxy = poly.bounds
+    pool = []
+    for _ in range(n * 260):
+        pt = (rng.uniform(minx, maxx), rng.uniform(miny, maxy))
+        if poly.contains(shape({"type": "Point", "coordinates": pt})):
+            pool.append(pt)
+        if len(pool) >= n * 26:
+            break
+    if len(pool) < n:
+        return [anchor] * n
+
+    # 대표점에서 시작해 가장 멀리 떨어진 후보를 차례로 고른다
+    picked = [anchor]
+    while len(picked) < n:
+        best, best_d = None, -1
+        for c in pool:
+            d = min((c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2 for q in picked)
+            if d > best_d:
+                best, best_d = c, d
+        picked.append(best)
+        pool.remove(best)
+    return picked
+
+
 def main():
     sil = json.loads((DATA / "silhouette.geojson").read_text(encoding="utf-8"))["features"][0]
     sgg = json.loads((DATA / "sgg.geojson").read_text(encoding="utf-8"))["features"]
@@ -41,18 +84,34 @@ def main():
 
     # 지명 사전 조회용 색인 — 샘플 키워드의 앵커가 실제 행정동인지 검증한다
     index = {(p["parent"], p["name"]): p for p in gaz["places"] if p["type"] == "dong"}
-    keywords, missing = [], []
-    for k in kw["keywords"]:
-        place = index.get((k["sgg"], k["dong"]))
-        if place is None:
-            missing.append(f'{k["text"]} → {k["sgg"]} {k["dong"]}')
-            continue
-        keywords.append({
-            "t": k["text"], "c": k["category"], "tr": k["tier"], "s": k["score"],
-            "lon": place["lon"], "lat": place["lat"], "d": f'{k["sgg"]} {k["dong"]}',
-        })
+    polys = {(f["properties"]["sgg_nm"], f["properties"]["dong_nm"]): shape(f["geometry"]).buffer(0)
+             for f in dong}
+
+    missing = [f'{k["text"]} → {k["sgg"]} {k["dong"]}'
+               for k in kw["keywords"] if (k["sgg"], k["dong"]) not in index]
     if missing:
         raise SystemExit("앵커가 지명 사전에 없습니다:\n  " + "\n  ".join(missing))
+
+    # 같은 행정동에 묶인 키워드는 동 안에서 서로 떨어뜨려 배치한다
+    grouped = {}
+    for k in kw["keywords"]:
+        grouped.setdefault((k["sgg"], k["dong"]), []).append(k)
+
+    keywords, approx_n = [], 0
+    for key, group in grouped.items():
+        place = index[key]
+        anchor = (place["lon"], place["lat"])
+        group.sort(key=lambda k: -k["score"])  # 점수 높은 쪽이 대표점을 갖는다
+        pts = spread_within(polys[key], anchor, len(group), seed=key[0] + key[1])
+        for k, (lon, lat) in zip(group, pts):
+            is_approx = (lon, lat) != anchor
+            approx_n += is_approx
+            keywords.append({
+                "t": k["text"], "c": k["category"], "tr": k["tier"], "s": k["score"],
+                "k": k.get("kind", "spot"), "a": 1 if is_approx else 0,
+                "lon": round(lon, R), "lat": round(lat, R),
+                "d": f'{k["sgg"]} {k["dong"]}',
+            })
 
     places = [
         {"n": p["name"], "k": p["type"], "lon": p["lon"], "lat": p["lat"],
@@ -68,7 +127,11 @@ def main():
         "places": places,
         "keywords": keywords,
         "categories": kw["categories"],
-        "counts": {"dong": len(dong), "sgg": len(sgg), "keywords": len(keywords)},
+        "counts": {
+            "dong": len(dong), "sgg": len(sgg), "keywords": len(keywords),
+            "stores": sum(1 for k in keywords if k["k"] == "store"),
+            "approx": approx_n,
+        },
     }
 
     data = json.dumps(bundle, ensure_ascii=False, separators=(",", ":"))
