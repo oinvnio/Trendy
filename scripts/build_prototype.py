@@ -119,8 +119,34 @@ def main():
         for p in gaz["places"] if p["type"] in ("sgg", "dong")
     ]
 
+    # 상가(상권)정보 집계 — 있으면 드릴다운 목록과 라벨 크기에 쓴다
+    stores = {"sgg": {}, "dong": {}}
+    counts_p, sample_p = DATA / "store-counts.json", DATA / "stores-sample.json"
+    if counts_p.exists() and sample_p.exists():
+        counts = json.loads(counts_p.read_text(encoding="utf-8"))["counts"]
+        sample = json.loads(sample_p.read_text(encoding="utf-8"))["groups"]
+        # 행정동 코드 → (구·군, "구·군 행정동")
+        unit_of = {f["properties"]["code"]:
+                   (f["properties"]["sgg_nm"],
+                    f'{f["properties"]["sgg_nm"]} {f["properties"]["dong_nm"]}')
+                   for f in dong}
+        for code, per_cat in counts.items():
+            if code not in unit_of:
+                continue
+            sgg_nm, dong_nm = unit_of[code]
+            for cat, n in per_cat.items():
+                lst = sample.get(f"{code}|{cat}", [])
+                for unit, level, cap in ((dong_nm, "dong", 8), (sgg_nm, "sgg", 12)):
+                    slot = stores[level].setdefault(f"{unit}|{cat}", {"n": 0, "list": []})
+                    slot["n"] += n
+                    for it in lst:
+                        if len(slot["list"]) < cap:
+                            slot["list"].append(it)
+        print(f"  상가정보 연결: 구·군 {len(stores['sgg'])}조합 / 행정동 {len(stores['dong'])}조합")
+
     bundle = {
         "bbox": sil["properties"]["bbox"],
+        "stores": stores,
         "silhouette": rings(sil["geometry"]),
         "sgg": [rings(f["geometry"]) for f in sgg],
         "dong": [rings(f["geometry"]) for f in dong],

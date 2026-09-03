@@ -53,15 +53,32 @@ COLS = {
     "lat": ("위도", "lat", "y", "좌표정보(y)", "위치좌표y"),
 }
 
-# 위에서부터 먼저 맞는 규칙을 쓴다. 상가 데이터라 자연·명소는 거의 없다 —
-# 이 파일이 실제로 채우는 것은 food·cafe·life이고 view는 TourAPI 몫이다.
-RULES = [
-    ("cafe", ("커피", "카페", "제과", "제빵", "디저트", "아이스크림", "빙수")),
-    ("food", ("음식", "식당", "주점", "restaurant")),
-    ("culture", ("문화", "박물관", "미술", "영화", "공연", "전시", "도서")),
-    ("view", ("관광", "명소", "공원", "유원지", "자연")),
-]
-DEFAULT_CAT = "life"
+# 업종 → 카테고리. 어디에도 걸리지 않으면 **버린다**(None).
+#
+# 상가정보 16만 건 중 트렌드 맵에 올릴 만한 것은 일부다. 부동산 서비스 6,055건,
+# 이용·미용 12,845건, 자동차 수리·세차 2,801건, 청소·방제 1,588건처럼 아무도
+# "요즘 뜨는 곳"으로 찾지 않는 업종이 대분류 단위로 섞여 있다. 이런 것을
+# 생활·지역으로 뭉뚱그리면 그 카테고리가 63%를 차지하면서 의미를 잃는다.
+#
+# 그래서 기본값을 두지 않고, 명시적으로 고른 업종만 남긴다.
+CAFE_SMALL = {"카페", "빵/도넛", "떡/한과", "토스트/샌드위치/샐러드", "아이스크림"}
+STAY_SMALL = {"호텔/리조트", "펜션", "게스트하우스", "민박"}
+
+
+def categorize(big, mid, small):
+    if mid == "비알코올" or small in CAFE_SMALL:
+        return "cafe"
+    if big == "음식":
+        return "food"                      # 한식·주점·중식·일식·분식·치킨 등
+    if mid == "이용·미용":
+        return "beauty"                    # 미용실·피부관리실·네일숍
+    if big == "숙박" and small in STAY_SMALL:
+        return "life"                      # 여관/모텔은 제외
+    if mid == "도서관·사적지" and small != "독서실/스터디 카페":
+        return "culture"
+    if small == "수상/해양 레저업":
+        return "view"
+    return None                            # 그 밖은 트렌드 대상이 아니다
 
 
 def open_csv(path):
@@ -217,14 +234,6 @@ def cmd_add(paths):
     print(f"누적 총계: {len(seen):,}건  ({STAGE.relative_to(ROOT)})")
 
 
-def categorize(big, mid, small):
-    blob = " ".join(x for x in (mid, small, big) if x)
-    for cat, needles in RULES:
-        if any(n in blob for n in needles):
-            return cat
-    return DEFAULT_CAT
-
-
 def cmd_build():
     if not STAGE.exists():
         sys.exit("누적된 데이터가 없습니다. 먼저 add 하세요.")
@@ -234,7 +243,7 @@ def cmd_build():
     tree = STRtree(polys)
 
     counts, groups = Counter(), defaultdict(list)
-    total = outside = mismatch = 0
+    total = outside = mismatch = excluded = 0
     with open(STAGE, encoding="utf-8", newline="") as fh:
         for row in csv.DictReader(fh):
             total += 1
@@ -250,6 +259,9 @@ def cmd_build():
             if row["dong_csv"] and row["dong_csv"] != hit["dong_nm"]:
                 mismatch += 1  # 경계 갱신 시차 — 공간 조인 결과를 신뢰한다
             cat = categorize(row["big"], row["mid"], row["small"])
+            if cat is None:
+                excluded += 1
+                continue
             key = (hit["code"], cat)
             counts[key] += 1
             if len(groups[key]) < PER_GROUP:
@@ -258,13 +270,14 @@ def cmd_build():
                     "lon": round(float(row["lon"]), 5), "lat": round(float(row["lat"]), 5),
                 })
 
+    placed = total - outside - excluded
     by_dong = defaultdict(dict)
     for (code, cat), n in counts.items():
         by_dong[code][cat] = n
     (OUT_DIR / "store-counts.json").write_text(json.dumps({
         "note": "행정동 × 카테고리 업소 수. 상권의 두께 지표이며 트렌드 점수가 아니다.",
         "source": "소상공인시장진흥공단 상가(상권)정보",
-        "total": total - outside, "counts": by_dong}, ensure_ascii=False), encoding="utf-8")
+        "total": placed, "counts": by_dong}, ensure_ascii=False), encoding="utf-8")
     (OUT_DIR / "stores-sample.json").write_text(json.dumps({
         "note": f"드릴다운 목록용 표본. 행정동×카테고리 그룹당 최대 {PER_GROUP}곳. "
                 "정렬 기준은 트렌드가 아니라 파일 등장 순서다.",
@@ -272,8 +285,9 @@ def cmd_build():
         "groups": {f"{c}|{k}": v for (c, k), v in groups.items()}},
         ensure_ascii=False), encoding="utf-8")
 
-    print(f"누적 {total:,}건 집계 → 부산 경계 안 {total - outside:,}건")
+    print(f"누적 {total:,}건 집계 → 지도에 올릴 {placed:,}건")
     print(f"  경계 밖으로 제외: {outside:,}건")
+    print(f"  트렌드 대상 아닌 업종으로 제외: {excluded:,}건")
     print(f"  CSV 행정동명 불일치: {mismatch:,}건 (공간 조인을 신뢰)")
     print("  카테고리:", dict(Counter(c for _, c in counts.elements()).most_common()))
     print(f"  행정동 커버리지: {len(by_dong)}/{len(props)}")

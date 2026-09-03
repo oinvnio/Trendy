@@ -15,6 +15,7 @@
   --warn-edge: #e6d5b0;
   --cat-food: #c0492b;
   --cat-cafe: #a8577e;
+  --cat-beauty: #6b5aa8;
   --cat-view: #1f7a6b;
   --cat-culture: #2f5da8;
   --cat-life: #6f7a24;
@@ -39,6 +40,7 @@
     --warn-edge: #4a3d1e;
     --cat-food: #ef8468;
     --cat-cafe: #e492bd;
+    --cat-beauty: #a99ae8;
     --cat-view: #52c2ac;
     --cat-culture: #7fa6ee;
     --cat-life: #b6c451;
@@ -63,6 +65,7 @@
   --warn-edge: #4a3d1e;
   --cat-food: #ef8468;
   --cat-cafe: #e492bd;
+  --cat-beauty: #a99ae8;
   --cat-view: #52c2ac;
   --cat-culture: #7fa6ee;
   --cat-life: #b6c451;
@@ -335,3 +338,16 @@ canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 }
 
 .pnote { margin: 0; color: var(--ink-faint); font-size: 11px; line-height: 1.45; }
+
+.psub {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.psub b { color: var(--ink); font-weight: 600; }
+.plist.plain li { grid-template-areas: "nm nm"; padding: 5px 0; }
+
+.cat .n .only-shop { font-size: 10px; opacity: .75; }

@@ -6,10 +6,11 @@
   const ctx = canvas.getContext("2d");
   const tip = document.getElementById("tip");
 
-  const CAT_ORDER = ["food", "cafe", "view", "culture", "life"];
+  const CAT_ORDER = ["food", "cafe", "beauty", "view", "culture", "life"];
   const CAT_VAR = {
-    food: "--cat-food", cafe: "--cat-cafe", view: "--cat-view",
-    culture: "--cat-culture", life: "--cat-life", place: "--cat-place",
+    food: "--cat-food", cafe: "--cat-cafe", beauty: "--cat-beauty",
+    view: "--cat-view", culture: "--cat-culture", life: "--cat-life",
+    place: "--cat-place",
   };
 
   // 줌 티어 경계 (fit 배율 대비 log2 배). 라벨은 자기 티어에 도달하면 서서히 나타난다.
@@ -92,12 +93,15 @@
       const members = state.stores ? g.members : g.members.filter((m) => m.poi !== "store");
       if (!members.length) continue;
       const rep = members[0];
+      const shop = (DATA.stores?.[useDong ? "dong" : "sgg"] || {})[`${g.unit}|${g.cat}`];
+      // 상권 두께 보정 — 실제 업소 수를 로그로 눌러 최대 +4px까지만 반영한다.
+      // 업소가 많다고 트렌드는 아니지만, 그 동네 그 업종이 두껍다는 사실은 맞다.
+      const thick = shop ? Math.min(4, Math.log10(shop.n + 1) * 1.6) : 0;
       out.push({
-        kind: "kw", group: g, members, rep,
+        kind: "kw", group: g, members, rep, shop,
         text: rep.text, cat: g.cat, score: rep.score, where: g.unit, approx: rep.approx,
         x: rep.x, y: rep.y, weight: 500,
-        // 묶인 개수가 많을수록 조금 크게 — 그 구역에서 그 카테고리가 두껍다는 신호
-        size: 10.5 + 14 * rep.score + Math.min(4.5, (members.length - 1) * 0.7),
+        size: 10.5 + 12 * rep.score + Math.min(3, (members.length - 1) * 0.5) + thick,
         appear: useDong ? TIER_IN[2] : TIER_IN[0],
         vanish: useDong ? null : TIER_IN[2],
       });
@@ -427,6 +431,13 @@
         <span class="dong">${m.where.split(" ")[1]}${m.approx ? " · 근사" : ""}</span>
         <span class="bar" style="--v:${Math.round(m.score * 100)}%"></span>
       </li>`).join("");
+    const shop = label.shop;
+    const shopRows = shop ? shop.list.map((x) => `<li><span class="nm">${x.n}</span></li>`).join("") : "";
+    const shopBlock = shop ? `
+      <h4 class="psub">이 구역의 ${DATA.categories[label.cat]} <b>${shop.n.toLocaleString()}곳</b></h4>
+      <ul class="plist plain">${shopRows}</ul>
+      <p class="pnote">상가(상권)정보에서 가져온 실제 업소입니다. 트렌드 순위가 아니라 파일 등장 순서이며,
+      언급량·급상승 신호가 붙으면 이 순서가 바뀝니다.</p>` : "";
     panel.innerHTML = `
       <div class="phead">
         <div>
@@ -435,9 +446,10 @@
         </div>
         <button type="button" class="pclose" id="pclose" aria-label="닫기">×</button>
       </div>
-      <p class="pmeta">${label.members.length}곳 · 대표 <b>${label.text}</b></p>
+      <h4 class="psub">트렌드 키워드 ${label.members.length}건 · 대표 <b>${label.text}</b></h4>
       <ul class="plist">${rows}</ul>
-      <p class="pnote">샘플 데이터입니다. 실제 목록은 수집 시점의 언급 근거와 함께 표시됩니다.</p>`;
+      <p class="pnote">키워드는 렌더링 검증용 샘플입니다.</p>
+      ${shopBlock}`;
     panel.hidden = false;
     document.getElementById("pclose").onclick = () => select(null);
     draw();
@@ -453,6 +465,12 @@
 
   // 카테고리 토글
   const catsEl = document.getElementById("cats");
+  // 카테고리별 실제 업소 수 — 트렌드 키워드가 아직 없는 카테고리를 위해
+  const shopTotal = {};
+  for (const [k, v] of Object.entries(DATA.stores?.sgg || {})) {
+    const cat = k.split("|")[1];
+    shopTotal[cat] = (shopTotal[cat] || 0) + v.n;
+  }
   for (const key of CAT_ORDER) {
     const n = DATA.keywords.filter((k) => k.c === key).length;
     const b = document.createElement("button");
@@ -461,7 +479,10 @@
     b.dataset.cat = key;
     b.setAttribute("aria-pressed", "true");
     b.style.setProperty("--c", `var(${CAT_VAR[key]})`);
-    b.innerHTML = `<span class="dot"></span><span>${DATA.categories[key]}</span><span class="n">${n}</span>`;
+    // 키워드가 없으면 업소 수를 대신 보여준다 — 데이터는 있고 트렌드 신호가 없을 뿐이다
+    const tally = n ? `${n}` :
+      (shopTotal[key] ? `<span class="only-shop">업소 ${shopTotal[key].toLocaleString()}</span>` : "0");
+    b.innerHTML = `<span class="dot"></span><span>${DATA.categories[key]}</span><span class="n">${tally}</span>`;
     b.onclick = () => {
       const on = b.getAttribute("aria-pressed") === "true";
       b.setAttribute("aria-pressed", on ? "false" : "true");
