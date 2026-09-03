@@ -48,9 +48,43 @@ def find(header, cands):
 
 
 def open_maybe_gz(path):
-    if str(path).endswith(".gz"):
-        return gzip.open(path, "rt", encoding="utf-8-sig", newline="")
-    return open(path, encoding="utf-8-sig", newline="")
+    """CSV를 연다. gzip·zip 압축과 UTF-8/CP949 인코딩을 모두 받아준다.
+
+    공공데이터포털 파일은 CP949(euc-kr)로 배포되는 경우가 흔해서 인코딩을
+    먼저 시험해 보고 고른다. zip이면 안에 든 첫 CSV를 읽는다.
+    """
+    import gzip as _gzip, io as _io, zipfile as _zip
+
+    def sniff(raw):
+        for enc in ("utf-8-sig", "cp949"):
+            try:
+                raw.decode(enc)
+                return enc
+            except UnicodeDecodeError:
+                continue
+        return "utf-8"  # 마지막 수단 — 아래에서 errors="replace"로 읽는다
+
+    p = str(path)
+    if p.endswith(".zip"):
+        zf = _zip.ZipFile(p)
+        inner = next((n for n in zf.namelist() if n.lower().endswith(".csv")), None)
+        if inner is None:
+            raise SystemExit(f"{p}: zip 안에 csv가 없습니다 — {zf.namelist()[:5]}")
+        data = zf.read(inner)
+    elif p.endswith(".gz"):
+        data = None
+        with _gzip.open(p, "rb") as fh:
+            head = fh.read(1 << 16)
+        enc = sniff(head)
+        return _gzip.open(p, "rt", encoding=enc, errors="replace", newline="")
+    else:
+        with open(p, "rb") as fh:
+            head = fh.read(1 << 16)
+        enc = sniff(head)
+        return open(p, encoding=enc, errors="replace", newline="")
+
+    enc = sniff(data[: 1 << 16])
+    return _io.StringIO(data.decode(enc, errors="replace"))
 
 
 def main(paths, out_path):
