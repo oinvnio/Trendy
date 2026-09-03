@@ -53,8 +53,11 @@
 - **Frontend:** Mapbox, Leaflet, 혹은 카카오/네이버 지도 API 기반 + Custom Text Overlay(워드클라우드 레이어)
 - **Backend/Data:** 일정 주기(예: 1시간)마다 지역별 언급량 수집 → 가중치(TF-IDF 등) 계산 → 줌 레벨에 맞는 데이터 바인딩
 
-기술 설계 상세는 [docs/technical-plan.md](docs/technical-plan.md) 참고.
+- 기술 설계 상세: [docs/technical-plan.md](docs/technical-plan.md)
+- **부산 MVP 명세: [docs/mvp-busan.md](docs/mvp-busan.md)**
 
 ## 6. 현재 상태
 
 기획 단계 (Planning). 코드 구현 전이며, 본 저장소는 기획 문서부터 관리한다.
+
+첫 구현 범위는 전국이 아니라 **부산광역시 단독 MVP**다. 부산 경계 실루엣을 키워드 텍스트로 채우는 워드클라우드 지도를 만들고, SNS 크롤링 없이 공공·검색 API만으로 데이터를 확보한다. 자세한 내용은 [docs/mvp-busan.md](docs/mvp-busan.md)를 본다.
