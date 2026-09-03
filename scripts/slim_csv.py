@@ -14,7 +14,9 @@
 """
 import csv
 import gzip
+import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 KEEP = ["상가업소번호", "상호명", "지점명", "상권업종대분류명", "상권업종중분류명",
@@ -103,20 +105,45 @@ def main(paths, out_path):
                     sys.exit(f"{path}: 상호명·경도·위도 컬럼을 찾지 못했습니다.\n"
                              f"헤더: {', '.join(header[:25])}")
                 n = 0
+                drop_sido = drop_coord = 0
+                sido_seen = Counter()
+                sample = None
                 for row in reader:
                     total += 1
+                    if sample is None:
+                        sample = row
+                    if sido_col or sidocd_col:
+                        sido_seen[(row.get(sido_col) or row.get(sidocd_col) or "").strip()] += 1
                     if sido_col:
                         if "부산" not in (row.get(sido_col) or ""):
+                            drop_sido += 1
                             continue
                     elif sidocd_col and not str(row.get(sidocd_col) or "").startswith("26"):
+                        drop_sido += 1
                         continue
                     if not (row.get(cols["경도"]) and row.get(cols["위도"])):
+                        drop_coord += 1
                         continue
                     writer.writerow({k: (row.get(c) or "").strip() if c else ""
                                      for k, c in cols.items()})
                     n += 1
                 kept += n
-                print(f"  {Path(path).name}: {n:,}건 추출")
+                print(f"  {Path(path).name}: {n:,}건 추출 "
+                      f"(시도 불일치 {drop_sido:,} / 좌표 없음 {drop_coord:,})")
+                if n == 0:
+                    print("  ── 0건이라 진단을 출력합니다 ──")
+                    print(f"  읽은 행 수: {total:,}")
+                    print(f"  인식된 컬럼: " + ", ".join(f"{k}→{v}" for k, v in cols.items() if v))
+                    miss = [k for k, v in cols.items() if not v]
+                    if miss:
+                        print(f"  못 찾은 컬럼: {', '.join(miss)}")
+                    print(f"  시도 컬럼: {sido_col or sidocd_col or '없음'}")
+                    if sido_seen:
+                        print("  시도 값 상위: " +
+                              ", ".join(f"{v!r}×{c:,}" for v, c in sido_seen.most_common(5)))
+                    if sample:
+                        print("  첫 행: " + json.dumps(sample, ensure_ascii=False)[:500])
+                    print("  ── 이 내용을 그대로 알려주시면 매핑을 고칩니다 ──")
 
     src = sum(Path(p).stat().st_size for p in paths)
     dst = Path(out_path).stat().st_size
