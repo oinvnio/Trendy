@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+data/busan/.stores-busan.csv
+data/busan/.stores-meta.json
